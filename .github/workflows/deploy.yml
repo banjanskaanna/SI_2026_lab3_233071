@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - feature
 
 permissions:
   contents: read
@@ -11,21 +12,49 @@ permissions:
   id-token: write
 
 jobs:
-  github-pages:
+  lint-html:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - name: Install htmlhint
+        run: npm install -g htmlhint
+      - name: Lint HTML
+        run: htmlhint index.html
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
+  docker-push:
+    runs-on: ubuntu-latest
+    needs: lint-html
+    steps:
+      - uses: actions/checkout@v4
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Build Docker image
+        run: docker build -t ${{ secrets.DOCKER_USERNAME }}/si-2026-lab3:${{ github.ref_name }}-latest .
+      - name: Push Docker image
+        run: docker push ${{ secrets.DOCKER_USERNAME }}/si-2026-lab3:${{ github.ref_name }}-latest
 
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+  github-pages:
+    if: github.ref_name == 'master'
+    runs-on: ubuntu-latest
+    needs: docker-push
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: .
-
-      - name: Deploy to GitHub Pages
-        id: deployment
+      - id: deployment
         uses: actions/deploy-pages@v4
+
+  success:
+    if: github.ref_name == 'master'
+    runs-on: ubuntu-latest
+    needs: github-pages
+    steps:
+      - run: echo "Workflow successful"
